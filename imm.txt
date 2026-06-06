@@ -1,0 +1,20 @@
+-- test for implicit memory management
+-- fst and snd discard one argument each
+-- run with -imm flag
+--
+-- should add erase x
+--fst(Pair(x,y)) = x
+--
+-- should add erase y
+--snd(Pair(x,y)) = y
+--
+-- erase y and z
+--fst2(Triple(x,y,z)) = x
+--
+--id(*) = *
+--
+--foo(*,y) = *
+--foo2(*,y) = id(*)
+--
+--
+four(S(x)) = x|x|x|x

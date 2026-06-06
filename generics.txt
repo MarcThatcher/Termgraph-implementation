@@ -1,0 +1,12 @@
+-- test for natural numbers
+add(Z,y)    = y
+add(S(x),y) = S(add(x,y))
+--
+id(*) = *
+id(*(x)) = *(id(x))
+id(A) = B
+--
+e(*)      = -
+e(*(x))   = e(x)
+e(*(x,y)) = e(x) | e(y)
+foo(*,y) = *

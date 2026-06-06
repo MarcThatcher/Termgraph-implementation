@@ -1,0 +1,3 @@
+-- HOFs tests
+map(Nil, ^f)  = Nil
+map(x:xs, ^f) = (^f(x) : map(xs, ^f))
