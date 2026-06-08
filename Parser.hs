@@ -31,9 +31,9 @@ data Term
   | Nat Int
   | NatVar VarName
   | GenConstr [Term]
-  | ListTerm [Term]       -- syntactic sugar
-  | FuncRef FuncName      -- for defining HOFs
-  | FuncApp FuncName Term -- for calling HOFs
+  | ListTerm [Term]         -- syntactic sugar
+  | FuncRef FuncName        -- for defining HOFs
+  | FuncApp FuncName [Term] -- for calling HOFs
   deriving (Eq,Show)
 
 ----------------------------------------------------------
@@ -155,10 +155,8 @@ funcRefTerm :: Parser Term
 funcRefTerm = do
     tHat
     f <- lowerID
-    arg <- optionMaybe (tOpenPar *> program <* tClosePar)
-    pure $ case arg of
-               Just a  -> FuncApp f a
-               Nothing -> FuncRef f
+    args <- option [] (tOpenPar *> (program `sepBy` tComma) <* tClosePar)
+    pure $ if null args then FuncRef (f ++ "_hat") else FuncApp (f ++ "_hat") args
 
 parenTerm :: Parser Term
 parenTerm = tOpenPar *> program <* tClosePar

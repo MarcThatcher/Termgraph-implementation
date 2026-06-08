@@ -10,18 +10,18 @@ id(Z)=Z
 --doNowt(_x)    = succ(pred(_x))
 --stillNowt(_x) = pred(succ(_x))
 --
---add(Z,y)    = y
---add(A,y)    = y
---add(S(x),y) = S(add(x,y))
+add(Z,y)    = y
+add(A,y)    = y
+add(S(x),y) = S(add(x,y))
 --
---d(Z)    = Z|Z
---d(S(x)) = let [x1,x2]~d(x) in S(x1)|S(x2)
+d(Z)    = Z|Z
+d(S(x)) = let [x1,x2]~d(x) in S(x1)|S(x2)
 --
---e(Z)    = -
---e(S(x)) = e(x)
+e(Z)    = -
+e(S(x)) = e(x)
 --
---mult(Z,y)    = Z | e(y)
---mult(S(x),y) = let [y1,y2]~d(y) in add(mult(x,y1),y2)
+mult(Z,y)    = Z | e(y)
+mult(S(x),y) = let [y1,y2]~d(y) in add(mult(x,y1),y2)
 --
 --len(Nil)        = Z
 --len(Cons(x,xs)) = S(len(xs)) | e(x)

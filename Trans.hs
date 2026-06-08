@@ -407,7 +407,6 @@ transRule :: Rule -> LUT -> Bool -> String
 transRule rule lut npm =
     let 
         Rule t1 t2 = rule
-        _ = trace ("t2: " ++ show t2)
         root       = "r"
         lhs        = cleanNet $ trans t1 root ([], []) lut
         numAgents  = length (fst lhs)
