@@ -1,6 +1,6 @@
 module Trans where
 
-import Data.Char (ord, chr, isAlpha)
+import Data.Char (ord, chr, isAlpha, isAlphaNum, isLower)
 import Data.List (nub, group, sort,isPrefixOf, partition, stripPrefix, intercalate, isSuffixOf)
 import Parser
 import Text.Parsec (ParseError)
@@ -32,7 +32,7 @@ main args = do
         ruleLines   = filter (not . ("--" `isPrefixOf`)) inputLines
         parsedRules = map parseRule ruleLines
         rules = (if imm then addAllErasers . addAllDuplicators else id)
-                $ (if hof then expandFuncRefs else id)
+                $ (if hof then expandAllFuncApps else id)
                 $ expandAllGenConstrs [r | Right r <- parsedRules]
         errors      = [e | Left e <- parsedRules]
     if not (null errors)
@@ -116,7 +116,7 @@ trans (Func "!eraser" [Var v]) root (agents, wires) _ =
 -- comment that need to always have () after function when 0-arity else INPLA cannot distinguish e()~1 (erase func) from e~1 (port e)
 trans (Func fName args) root net lut =
   let numOuts = funcNumOuts fName lut
-      pp       = fresh root
+      pp      = fresh root
 
       -- output ports: first is root, rest are root ++ fresh iterated
       outPorts = 
@@ -135,7 +135,7 @@ trans (Func fName args) root net lut =
         foldr
           (\(arg, port) (as, ws) ->
              let freshP       = fresh port
-                 (as', ws')  = trans arg freshP net lut
+                 (as', ws')   = trans arg freshP net lut
                  newWire      = (freshP, port)  -- connect arg result to function input
              in  (as' ++ as, newWire : (ws' ++ ws)))
           ([], [])
@@ -190,15 +190,9 @@ trans (ListTerm terms) root (agents, wires) _ =
     let listStr = "[" ++ intercalate "," (map termToINPLA terms) ++ "]"
     in (agents ++ [(listStr, root, [])], wires)
 
--- function reference: wire using f_hat port name
-trans (FuncRef f) root (agents, wires) _ =
-    (agents, wires ++ [(f, root)])
-
--- function application: becomes i_app agent
-trans (FuncApp f x) root (agents, wires) lut =
-    let freshP = fresh root
-        (agents', wires') = trans x freshP (agents, wires) lut
-    in (agents' ++ [("i_app", f, [root, freshP])], wires')
+-- function application: should not be called
+trans (FuncApp f args) root (agents, wires) _ =
+    error "FuncApp should have been expanded before translation"
 
 
 
@@ -232,7 +226,7 @@ renameWire (Var v) wire var =
 
 netToINPLA :: Net -> String
 netToINPLA (agents, wires)
-  | null inplaAgents = inplaWires ++ ";"
+  | null inplaAgents = inplaWires  ++ ";"
   | null inplaWires  = inplaAgents ++ ";"
   | otherwise        = inplaAgents ++ "," ++ inplaWires ++ ";"
   where
@@ -244,9 +238,11 @@ agentsToINPLA []     = ""
 agentsToINPLA [(symbol, pp, auxPorts)]    = agentStr symbol auxPorts ++ "~" ++ pp
 agentsToINPLA ((symbol, pp, auxPorts):as) = agentStr symbol auxPorts ++ "~" ++ pp ++ "," ++ agentsToINPLA as
 
+agentStr :: Symbol -> [Port] -> String
 agentStr symbol auxPorts
-    | symbol == "!eraser"         = "Eraser"
-    | symbol == "!Cons"           = "(" ++ head auxPorts ++ ":" ++ last auxPorts ++ ")"
+    | head symbol == '['          = symbol
+    | symbol      == "!eraser"    = "Eraser"
+    | symbol      == "!Cons"      = "[" ++ head auxPorts ++ ":" ++ last auxPorts ++ "]"
     | "(int " `isPrefixOf` symbol = init (drop 5 symbol)
     | otherwise                   = symbol ++ "(" ++ listPorts auxPorts ++ ")"
 
@@ -291,8 +287,8 @@ countOuts (Func f _) lut    = funcNumOuts f lut
 countOuts (Let t1 _ t2) lut = countOuts t2 lut
 countOuts (Par t1 t2) lut   = (countOuts t1 lut) + (countOuts t2 lut)
 countOuts (ListTerm _) _    = 1
-countOuts (FuncRef _) _     = 1
 countOuts (FuncApp _ _) _   = 1
+
 
 -- fresh port names - appends _0 after alpha, increments digit after _, 9 -> _a
 fresh :: String -> String
@@ -303,7 +299,7 @@ fresh s
 
 -- clean up intermediate links e.g. a~b,b~c
 cleanNet :: Net -> Net
-cleanNet (agents, wires) = --(agents, wires)
+cleanNet (agents, wires) = 
     let intermediates     = nub $ intermediatePorts wires
         collapsedWires    = nub $ collapseChains wires intermediates
     in collapseWiresToPorts (updateAgentsWithWires agents collapsedWires)
@@ -408,7 +404,7 @@ transRule rule lut npm =
     let 
         Rule t1 t2 = rule
         root       = "r"
-        lhs        = cleanNet $ trans t1 root ([], []) lut
+        lhs        = transLHS t1 root lut -- cleanNet $ trans t1 root ([], []) lut
         numAgents  = length (fst lhs)
         rhs = case t2 of
                 Par t1' t2' -> 
@@ -423,11 +419,13 @@ transRule rule lut npm =
                             in (agentsAcc ++ a', wiresAcc ++ w')
                         rhsNet = foldl combineNet ([], []) (zip flatRHS outsList)
                     in rhsNet
-                Let _ _ _ -> cleanUpLetOutputs lhs (cleanNet $ trans t2 "r" ([], []) lut) lut
-                _         -> cleanNet $ trans t2 "r" ([], []) lut
+                Let _ _ _ -> cleanUpLetOutputs lhs (cleanNet $ trans t2 root ([], []) lut) lut
+                _         -> let (agents,wires) = trans t2 root ([], []) lut
+                             in cleanNet (nub agents,nub wires) 
     in if npm && numAgents > 2
        then applyT lhs t2 root lut npm
-       else (transActivePair lhs) ++ (netToINPLA rhs)
+       else let lhsStr = transActivePair lhs
+            in lhsStr ++ netToINPLA (renameNetPorts lhsStr rhs)
 
 applyT :: Net -> Term -> Port -> LUT -> Bool -> String
 applyT lhs t2 root lut npm =
@@ -564,12 +562,6 @@ notInLHS :: Net -> [String] -> [String]
 notInLHS (lhsAgents, lhsWires) ports =
   let lhsPorts = concatMap (\(_,pp,aux) -> pp:aux) lhsAgents ++ concatMap (\(a,b) -> [a,b]) lhsWires
   in filter (`notElem` lhsPorts) ports
-
--- replacePortAgent :: Agent -> Port -> Port -> [Agent]
--- replacePortAgent (symbol, pp, aux) new old =
---   let pp'  = if pp == old then new else pp
---       aux' = map (\p -> if p == old then new else p) aux
---   in (symbol, pp', aux')
 
 replacePortAgents :: [Agent] -> [(Port,Port)] -> [Agent]
 replacePortAgents []          _        = []
@@ -972,21 +964,64 @@ expandAllMPP rules =
         expanded  = concatMap (uncurry expandMPPGroup) groups
     in normalRules ++ expanded
 
+-- HoFs
+expandFuncApp :: Term -> Term
+expandFuncApp (FuncApp f args)   = Func "i_app" (Var f : map expandFuncApp args)
+expandFuncApp (Constr c args)    = Constr c (map expandFuncApp args)
+expandFuncApp (Func f args)      = Func f (map expandFuncApp args)
+expandFuncApp (Par t1 t2)        = Par (expandFuncApp t1) (expandFuncApp t2)
+expandFuncApp (Let t1 vs t2)     = Let (expandFuncApp t1) vs (expandFuncApp t2)
+expandFuncApp t                  = t
 
--- HOFs
--- Rename FuncRef and FuncApp to use f_hat port names
-renameFuncRefsRule :: Rule -> Rule
-renameFuncRefsRule (Rule lhs rhs) = Rule (renameFuncRefs lhs) (renameFuncRefs rhs)
+expandFuncAppRule :: Rule -> Rule
+expandFuncAppRule (Rule lhs rhs) = Rule (expandFuncApp lhs) (expandFuncApp rhs)
 
-renameFuncRefs :: Term -> Term
-renameFuncRefs (FuncRef f)       = Var (f ++ "_hat")
-renameFuncRefs (FuncApp f x)     = Func "i_app" [Var (f ++ "_hat"), renameFuncRefs x]
-renameFuncRefs (Constr c args)   = Constr c (map renameFuncRefs args)
-renameFuncRefs (Func f args)     = Func f (map renameFuncRefs args)
-renameFuncRefs (Par t1 t2)       = Par (renameFuncRefs t1) (renameFuncRefs t2)
-renameFuncRefs (Let t1 vs t2)    = Let (renameFuncRefs t1) vs (renameFuncRefs t2)
-renameFuncRefs t                 = t
+expandAllFuncApps :: [Rule] -> [Rule]
+expandAllFuncApps = map expandFuncAppRule
 
--- Apply renameFuncRefsRule to all rules
-expandFuncRefs :: [Rule] -> [Rule]
-expandFuncRefs = map renameFuncRefsRule
+extractLHSPorts :: String -> [String]
+extractLHSPorts [] = []
+extractLHSPorts s =
+    case dropWhile (/= '(') s of
+        [] -> []
+        (_:rest) ->
+            let ports = filter (/= "int") $ splitOnNonIdent (takeWhile (/= ')') rest)
+            in ports ++ extractLHSPorts (dropWhile (/= ')') rest)
+
+renameNetPorts :: String -> Net -> Net
+renameNetPorts str net = net
+-- renameNetPorts lhsStr (rhsAgents, rhsWires) =
+--     let lhsPorts = extractLHSPorts lhsStr
+--         allPorts = concatMap (\(_, pp, aux) -> pp : aux) rhsAgents
+--                 ++ concatMap (\(a, b) -> [a, b]) rhsWires
+--         toRename = filter (`notElem` lhsPorts) (nub allPorts)
+--         portMap = Map.fromList (zip toRename (map (\n -> "a_" ++ show n) [1..]))
+--         rename p = Map.findWithDefault p p portMap
+--         renameAgent (sym, pp, aux) = (sym, rename pp, map rename aux)
+--         renameWire' (a, b) = (rename a, rename b)
+--     in (map renameAgent rhsAgents, map renameWire' rhsWires)
+
+splitOnNonIdent :: String -> [String]
+splitOnNonIdent [] = []
+splitOnNonIdent s@(c:cs)
+    | isIdentChar c = let (word, rest) = span isIdentChar s
+                      in word : splitOnNonIdent rest
+    | otherwise     = splitOnNonIdent cs
+
+isIdentChar :: Char -> Bool
+isIdentChar c = isAlphaNum c || c == '_'
+
+
+
+transLHS :: Term -> Port -> LUT -> Net
+transLHS term root lut =
+    let (Func fName (c:auxs1))  = term
+        numOuts1                = funcNumOuts fName lut
+        outPorts1               = if numOuts1 == 0 then []
+                                  else
+                                  root : map (root ++) (take (numOuts1 - 1) $ tail $ iterate fresh root)
+        agent1                  = (fName, "p1", outPorts1 ++ (map (\(Var s) -> s) auxs1))
+        (Constr cName auxs2)    = c
+        agent2                  = (cName, "p2", (map (\(Var s) -> s) auxs2))
+    in
+        ([agent1]++[agent2],[("p1","p2")])

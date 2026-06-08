@@ -1,3 +1,5 @@
 -- HOFs tests
-map(Nil, ^f)  = Nil
-map(x:xs, ^f) = let [f1,f2]~^f in (^f(x) : map(xs, ^f))
+map(Nil, ^f)   = Nil
+map(x:xs, ^f)  = (^f(x) : map(xs, ^f))
+app(_x,^f)     = ^f(x)
+comp(_x,^f,^g) = ^f(^g(x)) 

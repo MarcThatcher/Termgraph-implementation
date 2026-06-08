@@ -1,0 +1,2 @@
+-- random stuff
+foo(Z,a,b) = a | b 

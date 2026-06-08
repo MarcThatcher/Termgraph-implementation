@@ -55,7 +55,7 @@ lexToken = choice
   , symbol '-'  >> pure TBlank
   , symbol ':'  >> pure TCons
   , symbol '*'  >> pure TStar
-  , symbol '^' >> pure THat
+  , symbol '^'  >> pure THat
   , natural
   , lowerIdent
   , upperIdent
