@@ -1,11 +1,12 @@
 module Trans where
 
-import Data.Char (ord, chr, isAlpha, isAlphaNum, isLower)
+import Data.Char (ord, chr, isAlpha, isAlphaNum, isLower, isDigit)
 import Data.List (nub, group, sort,isPrefixOf, partition, stripPrefix, intercalate, isSuffixOf)
 import Parser
 import Text.Parsec (ParseError)
 import Debug.Trace
 import qualified Data.Map.Strict as Map
+
 
 -- ------------------------
 -- Data structures for fully explicit INPLA nets
@@ -17,11 +18,24 @@ type Wire   = (Port,Port)
 type Net    = ([Agent],[Wire])
 type LUT    = [(String,Int)]         -- (func label, number outputs)
 
-main :: [String] -> IO ()
---takes a list of inputs: flags plus file name (order doesn't matter); to change to being unix-style for final version
+
+-- main takes a list of flags and a file name *.txt (order ignored)
+-- if -bat is there, calls batch else calls interactive
+-- both consider following flags:
 -- -imm = implicit memory management (adds erase & duplication on RHS of rules)
 -- -npm = nested pattern matching (implements Interaction Nets with NPM by Hassan & Sato)
-main args = do
+-- -hof = deal with higher order functions
+-- can have multiple flags
+-- If -bat then file must have 0 or more rules followed by 1 or more blank lines and a term.
+-- Comments are -- ; single line only
+main :: [String] -> IO ()
+main args =
+    if "-bat" `elem` args
+    then batch args
+    else interactive args
+
+interactive :: [String] -> IO ()
+interactive args = do
     let imm      = "-imm" `elem` args
         npm      = "-npm" `elem` args
         mpp      = "-mpp" `elem` args
@@ -29,8 +43,40 @@ main args = do
         filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof"]) args)
     inputFile  <- readFile filename
     let inputLines  = lines inputFile
-        ruleLines   = filter (not . ("--" `isPrefixOf`)) inputLines
+        ruleLines   = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) inputLines
         parsedRules = map parseRule ruleLines
+        rules       = (if imm then addAllErasers . addAllDuplicators else id)
+                      $ (if hof then expandAllFuncApps else id)
+                      $ expandAllGenConstrs [r | Right r <- parsedRules]
+        errors      = [e | Left e <- parsedRules]
+    if not (null errors)
+       then error ("Parse errors: " ++ show errors)
+       else do
+           let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
+               lut        = makeLUT rules builtinLUT
+               transRules = dupToDup (transRuleList rules lut npm)
+           putStrLn "Input:"
+           putStrLn inputFile
+           putStrLn "\nINPLA rules:"
+           putStrLn transRules
+           putStrLn ""
+           putStr "Enter a FLIN term to translate, or :Q to quit"
+           putStrLn ""
+           replLoop lut
+
+batch :: [String] -> IO ()
+batch args = do
+    let imm      = "-imm" `elem` args
+        npm      = "-npm" `elem` args
+        mpp      = "-mpp" `elem` args
+        hof      = "-hof" `elem` args
+        filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof", "-bat"]) args)
+    inputFile  <- readFile filename
+    let inputLines  = lines inputFile
+        nonComment  = filter (not . ("--" `isPrefixOf`)) inputLines
+        (rs, rest)  = break null nonComment
+        termLine    = head $ filter (not . null) rest
+        parsedRules = map parseRule rs
         rules = (if imm then addAllErasers . addAllDuplicators else id)
                 $ (if hof then expandAllFuncApps else id)
                 $ expandAllGenConstrs [r | Right r <- parsedRules]
@@ -38,20 +84,19 @@ main args = do
     if not (null errors)
        then error ("Parse errors: " ++ show errors)
        else do
-           let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 0), ("i_lam", 1), ("i_app", 1)]  -- needs to have special rules in transRuleList or elsewhere for each
+           let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
                lut        = makeLUT rules builtinLUT
                transRules = dupToDup (transRuleList rules lut npm)
-           putStrLn $ "LUT: " ++ show lut
-           -- print FLIN rules
-           putStrLn "FLIN rules:"
-           putStrLn inputFile
-           putStrLn "\nINPLA rules:"
-           putStrLn transRules
-           putStrLn ""
-           putStr "Enter a FLIN term to translate, or :Q to quit"
-           putStrLn ""
-           -- start interactive loop to translate terms
-           replLoop lut
+               termResult = case inpla lut termLine of
+                                Left err  -> "Parse error: " ++ show err
+                                Right str -> str
+               Right pt   = parseTerm termLine
+               netTerm    = trans pt "r" ([],[]) lut
+               outPorts   = unconnectedPorts netTerm 
+               outFile    = reverse (dropWhile (/= '.') (reverse filename)) ++ "in"
+               output     = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
+           writeFile outFile output
+           putStrLn $ "Written to " ++ outFile
 
 replLoop :: LUT -> IO ()
 replLoop lut = do
@@ -73,7 +118,6 @@ dupToDup str = case stripPrefix "!duplicator" str of
     Just rest -> "Dup" ++ dupToDup rest
     Nothing   -> head str : dupToDup (tail str)
 
-
 -- trans
 trans :: Term -> VarName -> Net -> LUT -> Net
 -- Variables
@@ -85,6 +129,12 @@ trans Empty _ (agents, wires) _ =
     (agents, wires)
 
 -- Constructors
+-- special case for higher-order constructor "i_lam"
+trans (Constr "i_lam" [port, Func fname _]) root (agents, wires) lut =
+    (agents ++ [("i_lam", root, ["a1"++root++fname, "a2"++root++fname]),
+                (fname, "a1"++root++fname, ["a2"++root++fname])],
+     wires)
+
 trans (Constr constr args) root (agents, wires) lut =
   let numIns = length args
 
@@ -145,22 +195,25 @@ trans (Func fName args) root net lut =
 
 -- natural number variables
 trans (NatVar v) root (agents, wires) _ =
-    (agents ++ [("(int " ++ v ++ ")", root, [])], wires)
+    -- (agents ++ [("(int " ++ v ++ ")", root, [])], wires)
+    -- (agents ++ [(v, root, [])], wires)
+       (agents , wires++[(root,v)])
 
--- natural number literals: on LHS become (int n) agent for pattern matching
+-- natural number literals: on RHS become n port for pattern matching
 trans (Nat n) root (agents, wires) _ =
-    (agents ++ [("(int " ++ show n ++ ")", root, [])], wires)
+    -- (agents ++ [("(int " ++ show n ++ ")", root, [])], wires)
+    (agents ++ [(show n, root, [])], wires)
 
 -- let
 trans (Let t1 vars t2) root net lut =
   let
       -- 1. Translate t1
-      (agents1, wires1) = trans t1 root net lut
+      (agents1, wires1) = cleanNet $ trans t1 root net lut
 
       -- 2. Rename outputs of t1 to match 'vars'
       -- *** need to change this do deal with Par: need to do a case on shape of t1 e.g. x,y~A|B in x|y***
-      (agents1',wires1') = 
-        if null agents1 then (agents1, renameWire t1 (head wires1) (head vars)) -- only handles 1 wire
+      (agents1',wires1') = cleanNet $
+        if null agents1 then (agents1, renameWire t1 (head wires1) (head vars))   -- only handles 1 wire
         else ((renameOutputs t1 (head agents1) vars lut) : tail agents1, wires1)  -- only handles 1 agent
 
       -- 3. Translate t2 with updated net
@@ -170,11 +223,11 @@ trans (Let t1 vars t2) root net lut =
       (agents2,wires2) = 
         if null agents1' then (agents1',wires1')
         else 
-          let (agents3,wires3) = trans t2 (root++"L"++(fresh root)) ([],[]) lut
+          let (agents3,wires3) = cleanNet $ trans t2 (root++"L"++(fresh root)) ([],[]) lut
           in (agents1'++agents3,wires1'++wires3)
   in
       -- Output ex duplications created
-      (nub agents2, nub wires2)
+      cleanNet (nub agents2, nub wires2)
 
 -- ||
 trans (Par t1 t2) root (agents,wires) lut =
@@ -208,7 +261,7 @@ termToINPLA _                = error "termToINPLA: unsupported term in list lite
 renameOutputs :: Term -> Agent -> [VarName] -> LUT -> Agent
 -- need the Term to know whether is Constr or Func
 renameOutputs (Var v) agent vars lut = 
-  undefined
+  undefined -- because dealt with by renameWire
 renameOutputs Empty agent vars lut = 
   undefined
 renameOutputs (Constr _ _) (name,out,ins) vars lut = 
@@ -244,6 +297,7 @@ agentStr symbol auxPorts
     | symbol      == "!eraser"    = "Eraser"
     | symbol      == "!Cons"      = "[" ++ head auxPorts ++ ":" ++ last auxPorts ++ "]"
     | "(int " `isPrefixOf` symbol = init (drop 5 symbol)
+    | all isDigit symbol          = symbol
     | otherwise                   = symbol ++ "(" ++ listPorts auxPorts ++ ")"
 
 listPorts :: [Port] -> String
@@ -489,7 +543,7 @@ transRuleList rules lut npm =
     builtins ++ guardedRules ++ dupToDup normalRules
     where
         -- built in INPLA rules : succ&pred to work with natural number consturctors and i_app and i_lam for lambda calculus for HOFs
-        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) => r~(x-1);\ni_lam(x1,x2) >< i_app(y1,y2) => y1~x2,y2~x1;\n---\n"
+        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) => r~(x-1);\ni_lam(x1,x2) >< i_app(y1,y2) => y1~x2,y2~x1;\n"
         -- find functions with nat literal rules
         natFuncs     = natLitFuncNames rules
         -- generate guarded rules for those functions
@@ -522,9 +576,11 @@ flatPar t           = [t]
 --- **** 
 tr :: LUT -> String -> Either ParseError Net
 tr lut term =
-  case parseTerm term of
-    Left err -> Left err
-    Right t  -> Right (cleanNet $ trans t "r" ([], []) lut) 
+    let parsedTerm = parseTerm term
+    in
+    case parsedTerm of
+        Left err -> Left err
+        Right t  -> Right (cleanNet $ trans (transHOFterm t) "r" ([], []) lut) 
 
 inpla :: LUT -> String -> Either ParseError String
 inpla lut term =
@@ -534,7 +590,7 @@ inpla lut term =
 
 inLHSonly :: Net -> Net -> [String]
 inLHSonly (lhsAgents, lhsWires) (rhsAgents, rhsWires) =
-  let lhsPorts = map (\(_,pp,aux) -> pp:aux) lhsAgents ++ [[a,b] | (a,b) <- lhsWires]
+  let lhsPorts = map (\(_,pp,aux) -> aux) lhsAgents
       rhsPorts = map (\(_,pp,aux) -> pp:aux) rhsAgents ++ [[a,b] | (a,b) <- rhsWires]
   in filter (`notElem` concat rhsPorts) (concat lhsPorts)
 
@@ -549,7 +605,6 @@ unconnectedPorts (agents, wires) =
   let agentPorts = concatMap (\(_,pp,aux) -> pp:aux) agents
       wirePorts  = concatMap (\(a,b) -> [a,b]) wires
       attempt1 =  filter (`notElem` wirePorts) agentPorts
-      -- attempt2 = unconnectedPortsAgents (agents,wires)
   in uniqueOnly attempt1
 
 unconnectedPortsAgents :: Net -> [Port]
@@ -558,10 +613,36 @@ unconnectedPortsAgents (agents, wires) = uniqueOnly $ concatMap portList agents
 portList :: Agent -> [Port]
 portList (symbol,pp,auxList) = pp:auxList
 
+-- notInLHS :: Net -> [String] -> [String]
+-- notInLHS (lhsAgents, lhsWires) ports =
+--   let lhsPorts = concatMap (\(_,pp,aux) -> pp:aux) lhsAgents ++ concatMap (\(a,b) -> [a,b]) lhsWires
+--   in filter (`notElem` lhsPorts) ports
+
 notInLHS :: Net -> [String] -> [String]
 notInLHS (lhsAgents, lhsWires) ports =
-  let lhsPorts = concatMap (\(_,pp,aux) -> pp:aux) lhsAgents ++ concatMap (\(a,b) -> [a,b]) lhsWires
+  let lhsAgents'   = map stripAgent lhsAgents
+      lhsPorts     = concatMap (\(_,pp,aux) -> aux) lhsAgents' -- ++ concatMap (\(a,b) -> [a,b]) lhsWires
   in filter (`notElem` lhsPorts) ports
+
+stripInts :: Net -> Net
+stripInts ([agent1,agent2],wires) = (([stripAgent agent1] ++ [stripAgent agent2]), wires)
+
+stripAgent :: Agent -> Agent
+stripAgent (symbol, pp, auxPorts) =
+    let stripInt s | "int " `isPrefixOf` s  = Just (drop 4 s)
+                   | "(int " `isPrefixOf` s = Just (drop 5 (init s))
+                   | otherwise              = Nothing
+        auxPorts' = map (\s -> case stripInt s of Just v -> v; Nothing -> s) auxPorts
+        newAux    = case stripInt symbol of
+                        Just v  -> auxPorts' ++ [v]
+                        Nothing -> auxPorts'
+    in (symbol, pp, newAux)
+
+-- stripAgent :: Agent -> Agent
+-- stripAgent (symbol, pp, auxPorts) = (stripInt symbol, pp, map stripInt auxPorts)
+--   where stripInt s | "int " `isPrefixOf` s  = drop 4 s
+--                    | "(int " `isPrefixOf` s = drop 5 (init s)
+--                    | otherwise              = s
 
 replacePortAgents :: [Agent] -> [(Port,Port)] -> [Agent]
 replacePortAgents []          _        = []
@@ -778,6 +859,8 @@ replaceFirst old new t = fst (go t)
                                   in if done then (Let t1' vs t2, True)
                                      else let (t2', done2) = go t2
                                           in (Let t1' vs t2', done2)
+    go (NatVar v) | v == old    = (NatVar new, True)
+    go (NatVar v)               = (NatVar v, False)
     go t                        = (t, False)
     goList []                   = ([], False)
     goList (x:xs)               = let (x', done) = go x
@@ -788,7 +871,6 @@ replaceFirst old new t = fst (go t)
 -- Apply addDuplicators to all rules
 addAllDuplicators :: [Rule] -> [Rule]
 addAllDuplicators = map addDuplicators
-
 
 -- deal with issue that INPLA uses "anonymous" attributes and we treat nats as symbols
 -- Check if a rule's LHS has a Nat literal as its constructor argument
@@ -850,9 +932,13 @@ makeGuardedNatRule litRules mVarRule lut =
                 rhsStr' = init (netToINPLA rhsNet)
             in " | " ++ varName ++ "==" ++ show n ++ " => " ++ rhsStr'
         -- get header from first rule
-        Rule (Func fName args) _ = head litRules
+        Rule (Func fName args) _ = case mVarRule of
+                                     Just r  -> r
+                                     Nothing -> head litRules
+        --Rule (Func fName args) _ = head litRules
         -- get output ports from LHS translation
-        lhs      = cleanNet $ trans (Func fName args) "r" ([],[]) lut
+        lhs      = transLHS (Func fName args) "r" lut
+        --lhs      = cleanNet $ trans (Func fName args) "r" ([],[]) lut
         (agents,_) = lhs
         (_, _, auxPorts) = head agents
         outPorts = listPorts auxPorts
@@ -1012,7 +1098,6 @@ isIdentChar :: Char -> Bool
 isIdentChar c = isAlphaNum c || c == '_'
 
 
-
 transLHS :: Term -> Port -> LUT -> Net
 transLHS term root lut =
     let (Func fName (c:auxs1))  = term
@@ -1020,8 +1105,26 @@ transLHS term root lut =
         outPorts1               = if numOuts1 == 0 then []
                                   else
                                   root : map (root ++) (take (numOuts1 - 1) $ tail $ iterate fresh root)
-        agent1                  = (fName, "p1", outPorts1 ++ (map (\(Var s) -> s) auxs1))
-        (Constr cName auxs2)    = c
-        agent2                  = (cName, "p2", (map (\(Var s) -> s) auxs2))
-    in
-        ([agent1]++[agent2],[("p1","p2")])
+        agent1                  = (fName, "p1", outPorts1 ++ (map transAux auxs1))
+        agent2                  = case c of
+                                    ListTerm []        -> ("[]", "p2", [])
+                                    Constr cName auxs2 -> (cName, "p2", map (\(Var s) -> s) auxs2)
+                                    Nat n              -> ("(int " ++ show n ++ ")", "p2", [])
+                                    NatVar v           -> ("(int " ++ v ++ ")", "p2", [])
+                                    _                  -> error "transLHS: unsupported constructor pattern"
+        in ([agent1]++[agent2],[("p1","p2")])
+
+-- Translate an aux port term to a port name
+transAux :: Term -> String
+transAux (Var s)    = s
+transAux (NatVar v) = "int " ++ v
+transAux _          = error "transAux: unsupported aux pattern"
+
+-- translate HOF term
+transHOFterm :: Term -> Term
+transHOFterm (Func name [])    = Constr "i_lam" [Var (name ++ "_pp"), Func name []]
+transHOFterm (Func name args)  = Func name (map transHOFterm args)
+transHOFterm (Constr c args)   = Constr c (map transHOFterm args)
+transHOFterm (Par t1 t2)       = Par (transHOFterm t1) (transHOFterm t2)
+transHOFterm (Let t1 vs t2)    = Let (transHOFterm t1) vs (transHOFterm t2)
+transHOFterm t                 = t

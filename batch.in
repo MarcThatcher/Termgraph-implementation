@@ -1,0 +1,7 @@
+succ(r) >< (int x) => r~(x+1);
+pred(r)><(int x) => r~(x-1);
+i_lam(x1,x2) >< i_app(y1,y2) => y1~x2,y2~x1;
+dup(r,rr_0) >< Z => Z()~r,Z()~rr_0;
+
+dup(r,rr_0)~r_0,Z()~r_0;
+r rr_0;

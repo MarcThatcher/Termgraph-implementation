@@ -1,12 +1,8 @@
--- test for natural numbers
+-- test for generics
 add(Z,y)    = y
-add(S(x),y) = S(add(x,y))
+add(A,y)    = y
+--add(S(x),y) = S(add(x,y))
 --
-id(*) = *
-id(*(x)) = *(id(x))
-id(A) = B
---
-e(*)      = -
-e(*(x))   = e(x)
-e(*(x,y)) = e(x) | e(y)
-foo(*,y) = *
+-- generics now
+d(*) = * | *
+fst(*,y) = *
