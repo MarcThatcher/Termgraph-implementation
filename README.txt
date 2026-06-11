@@ -1,8 +1,12 @@
 README -- FLIN to INPLA translator
 
+Please note this implementation is for demonstration purposes only.
+In particular, not all errors are caught and those that are have messages designed for the author not the user.
+
 Sections below follow the abstract's sections.
 
 4. Base FLIN
+Do not use _ in variable names.
 
 4.1 Generic constructors
 
@@ -21,4 +25,11 @@ Example:
 add(0,  n) = n
 add(_m,_n) = succ(add(pred(m),n))
 
-Note that the base case must not flag 'n' as an integer.
+The base case must not flag 'n' as an integer.
+
+4.5 Multiple principal ports
+First argument still must be a constructor (or *) as cannot handle parallel definitions.
+(e.g. por(x,False) - if x never resolves.)
+
+4.6 Higher-order functions
+***are ports right way round on lam,app?

@@ -1,0 +1,4 @@
+-- zip: takes two lists and pairs them up element-by-element, stopping when either list runs out 
+zip([],ys) = []
+zip(*,[])  = []
+zip((x:xs),(y:ys)) = (Pair(x, y)) : (zip(xs,ys))

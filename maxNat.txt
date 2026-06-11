@@ -1,0 +1,5 @@
+-- max with Nats
+-- -mpp
+max(Z,y)  = y
+max(*,Z)  = *
+--max(_x,_y) = succ(max(pred(y), pred(x)))

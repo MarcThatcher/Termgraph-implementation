@@ -34,69 +34,133 @@ main args =
     then batch args
     else interactive args
 
-interactive :: [String] -> IO ()
-interactive args = do
-    let imm      = "-imm" `elem` args
-        npm      = "-npm" `elem` args
-        mpp      = "-mpp" `elem` args
-        hof      = "-hof" `elem` args
-        filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof"]) args)
-    inputFile  <- readFile filename
-    let inputLines  = lines inputFile
-        ruleLines   = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) inputLines
+-- flags recognised by main; anything else in args is the filename
+allFlags :: [String]
+allFlags = ["-imm", "-npm", "-mpp", "-hof", "-bat"]
+
+-- shared by interactive and batch: parse and expand rules, build LUT, translate rules to INPLA
+-- pipeline order: gen constrs -> mpp -> hofs -> imm
+processRules :: [String] -> [String] -> (LUT, String)
+processRules args ruleLines =
+    let imm         = "-imm" `elem` args
+        npm         = "-npm" `elem` args
+        mpp         = "-mpp" `elem` args
+        hof         = "-hof" `elem` args
         parsedRules = map parseRule ruleLines
         rules       = (if imm then addAllErasers . addAllDuplicators else id)
                       $ (if hof then expandAllFuncApps else id)
-                      $ expandAllGenConstrs [r | Right r <- parsedRules]
+                      $ (if mpp then expandAllMPP else id)
+                      $ expandAllGenConstrs
+                      $ [r | Right r <- parsedRules]
         errors      = [e | Left e <- parsedRules]
-    if not (null errors)
+        builtinLUT  = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
+        lut         = makeLUT rules builtinLUT
+        transRules  = dupToDup (transRuleList rules lut npm)
+    in if not (null errors)
        then error ("Parse errors: " ++ show errors)
-       else do
-           let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
-               lut        = makeLUT rules builtinLUT
-               transRules = dupToDup (transRuleList rules lut npm)
-           putStrLn "Input:"
-           putStrLn inputFile
-           putStrLn "\nINPLA rules:"
-           putStrLn transRules
-           putStrLn ""
-           putStr "Enter a FLIN term to translate, or :Q to quit"
-           putStrLn ""
-           replLoop lut
+       else (lut, transRules)
+
+interactive :: [String] -> IO ()
+interactive args = do
+    let filename = head (filter (`notElem` allFlags) args)
+    inputFile <- readFile filename
+    let ruleLines = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) (lines inputFile)
+        (lut, transRules) = processRules args ruleLines
+    putStrLn "Input:"
+    putStrLn inputFile
+    putStrLn "\nINPLA rules:"
+    putStrLn transRules
+    putStrLn ""
+    putStr "Enter a FLIN term to translate, or :Q to quit"
+    putStrLn ""
+    replLoop lut
 
 batch :: [String] -> IO ()
 batch args = do
-    let imm      = "-imm" `elem` args
-        npm      = "-npm" `elem` args
-        mpp      = "-mpp" `elem` args
-        hof      = "-hof" `elem` args
-        filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof", "-bat"]) args)
-    inputFile  <- readFile filename
-    let inputLines  = lines inputFile
-        nonComment  = filter (not . ("--" `isPrefixOf`)) inputLines
+    let filename = head (filter (`notElem` allFlags) args)
+    inputFile <- readFile filename
+    let nonComment  = filter (not . ("--" `isPrefixOf`)) (lines inputFile)
         (rs, rest)  = break null nonComment
         termLine    = head $ filter (not . null) rest
-        parsedRules = map parseRule rs
-        rules = (if imm then addAllErasers . addAllDuplicators else id)
-                $ (if hof then expandAllFuncApps else id)
-                $ expandAllGenConstrs [r | Right r <- parsedRules]
-        errors      = [e | Left e <- parsedRules]
-    if not (null errors)
-       then error ("Parse errors: " ++ show errors)
-       else do
-           let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
-               lut        = makeLUT rules builtinLUT
-               transRules = dupToDup (transRuleList rules lut npm)
-               termResult = case inpla lut termLine of
-                                Left err  -> "Parse error: " ++ show err
-                                Right str -> str
-               Right pt   = parseTerm termLine
-               netTerm    = trans pt "r" ([],[]) lut
-               outPorts   = unconnectedPorts netTerm 
-               outFile    = reverse (dropWhile (/= '.') (reverse filename)) ++ "in"
-               output     = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
-           writeFile outFile output
-           putStrLn $ "Written to " ++ outFile
+        (lut, transRules) = processRules args rs
+        termResult  = case inpla lut termLine of
+                          Left err  -> "Parse error: " ++ show err
+                          Right str -> str
+        Right pt    = parseTerm termLine
+        netTerm     = trans pt "r" ([],[]) lut
+        outPorts    = unconnectedPorts netTerm
+        outFile     = reverse (dropWhile (/= '.') (reverse filename)) ++ "in"
+        output      = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
+    writeFile outFile output
+    putStrLn $ "Written to " ++ outFile
+
+-- interactive :: [String] -> IO ()
+-- interactive args = do
+--     let imm      = "-imm" `elem` args
+--         npm      = "-npm" `elem` args
+--         mpp      = "-mpp" `elem` args
+--         hof      = "-hof" `elem` args
+--         filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof"]) args)
+--     inputFile  <- readFile filename
+--     let inputLines  = lines inputFile
+--         ruleLines   = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) inputLines
+--         parsedRules = map parseRule ruleLines
+--         rules       = (if imm then addAllErasers . addAllDuplicators else id)
+--                       $ (if hof then expandAllFuncApps else id)
+--                       $ (if mpp then expandAllMPP else id)
+--                       $ expandAllGenConstrs
+--                       $ [r | Right r <- parsedRules]
+--         errors      = [e | Left e <- parsedRules]
+--     if not (null errors)
+--        then error ("Parse errors: " ++ show errors)
+--        else do
+--            let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
+--                lut        = makeLUT rules builtinLUT
+--                transRules = dupToDup (transRuleList rules lut npm)
+--            putStrLn "Input:"
+--            putStrLn inputFile
+--            putStrLn "\nINPLA rules:"
+--            putStrLn transRules
+--            putStrLn ""
+--            putStr "Enter a FLIN term to translate, or :Q to quit"
+--            putStrLn ""
+--            replLoop lut
+
+-- batch :: [String] -> IO ()
+-- batch args = do
+--     let imm      = "-imm" `elem` args
+--         npm      = "-npm" `elem` args
+--         mpp      = "-mpp" `elem` args
+--         hof      = "-hof" `elem` args
+--         filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof", "-bat"]) args)
+--     inputFile  <- readFile filename
+--     let inputLines  = lines inputFile
+--         nonComment  = filter (not . ("--" `isPrefixOf`)) inputLines
+--         (rs, rest)  = break null nonComment
+--         termLine    = head $ filter (not . null) rest
+--         parsedRules = map parseRule rs
+--         rules       = (if imm then addAllErasers . addAllDuplicators else id)
+--                       $ (if hof then expandAllFuncApps else id)
+--                       $ (if mpp then expandAllMPP else id)
+--                       $ expandAllGenConstrs
+--                       $ [r | Right r <- parsedRules]
+--         errors      = [e | Left e <- parsedRules]
+--     if not (null errors)
+--        then error ("Parse errors: " ++ show errors)
+--        else do
+--            let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
+--                lut        = makeLUT rules builtinLUT
+--                transRules = dupToDup (transRuleList rules lut npm)
+--                termResult = case inpla lut termLine of
+--                                 Left err  -> "Parse error: " ++ show err
+--                                 Right str -> str
+--                Right pt   = parseTerm termLine
+--                netTerm    = trans pt "r" ([],[]) lut
+--                outPorts   = unconnectedPorts netTerm 
+--                outFile    = reverse (dropWhile (/= '.') (reverse filename)) ++ "in"
+--                output     = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
+--            writeFile outFile output
+--            putStrLn $ "Written to " ++ outFile
 
 replLoop :: LUT -> IO ()
 replLoop lut = do
@@ -180,18 +244,33 @@ trans (Func fName args) root net lut =
       -- the function agent itself
       newAgent       = (fName, pp, outPorts ++ inPortsExPP)
 
-      -- now handle arguments
+      -- now handle arguments, threading the accumulated net through each
+      -- translation (passing the same incoming net to every argument duplicates
+      -- it once per Var argument, which corrupts cleanNet's collapsing)
+      (netAgents, netWires) = net
       (allAgents, allWires) =
-        foldr
-          (\(arg, port) (as, ws) ->
-             let freshP       = fresh port
-                 (as', ws')   = trans arg freshP net lut
+        foldl
+          (\(as, ws) (arg, port) ->
+             let freshP       = port ++ "_0"
+                 (as', ws')   = trans arg freshP (as, ws) lut
                  newWire      = (freshP, port)  -- connect arg result to function input
-             in  (as' ++ as, newWire : (ws' ++ ws)))
-          ([], [])
+             in  (as', newWire : ws'))
+          (newAgent : netAgents, netWires)
           (zip args (pp : inPortsExPP))
   in
-      (newAgent : allAgents, allWires)
+      (allAgents, allWires)
+  --     (allAgents, allWires) =
+  --       foldr
+  --         (\(arg, port) (as, ws) ->
+  --            let freshP = port ++ "_0"
+  --            --let freshP       = fresh port
+  --                (as', ws')   = trans arg freshP net lut
+  --                newWire      = (freshP, port)  -- connect arg result to function input
+  --            in  (as' ++ as, newWire : (ws' ++ ws)))
+  --         ([], [])
+  --         (zip args (pp : inPortsExPP))
+  -- in
+  --     (newAgent : allAgents, allWires)
 
 -- natural number variables
 trans (NatVar v) root (agents, wires) _ =
@@ -217,13 +296,10 @@ trans (Let t1 vars t2) root net lut =
         else ((renameOutputs t1 (head agents1) vars lut) : tail agents1, wires1)  -- only handles 1 agent
 
       -- 3. Translate t2 with updated net
-      -- (agents2,wires2) = 
-      --   if null agents1' then (agents1',wires1')
-      --   else trans t2 (root++"L"++(fresh root)) (agents1',wires1') lut
       (agents2,wires2) = 
         if null agents1' then (agents1',wires1')
         else 
-          let (agents3,wires3) = cleanNet $ trans t2 (root++"L"++(fresh root)) ([],[]) lut
+          let (agents3,wires3) = cleanNet $ trans t2 root ([],[]) lut -- (root++"L"++(fresh root))
           in (agents1'++agents3,wires1'++wires3)
   in
       -- Output ex duplications created
@@ -295,7 +371,7 @@ agentStr :: Symbol -> [Port] -> String
 agentStr symbol auxPorts
     | head symbol == '['          = symbol
     | symbol      == "!eraser"    = "Eraser"
-    | symbol      == "!Cons"      = "[" ++ head auxPorts ++ ":" ++ last auxPorts ++ "]"
+    | symbol      == "!Cons"      = "(" ++ head auxPorts ++ ":" ++ last auxPorts ++ ")"
     | "(int " `isPrefixOf` symbol = init (drop 5 symbol)
     | all isDigit symbol          = symbol
     | otherwise                   = symbol ++ "(" ++ listPorts auxPorts ++ ")"
@@ -543,7 +619,8 @@ transRuleList rules lut npm =
     builtins ++ guardedRules ++ dupToDup normalRules
     where
         -- built in INPLA rules : succ&pred to work with natural number consturctors and i_app and i_lam for lambda calculus for HOFs
-        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) => r~(x-1);\ni_lam(x1,x2) >< i_app(y1,y2) => y1~x2,y2~x1;\n"
+        -- note pred min is 0
+        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) | x>0 => r~x-1 | _ => r~0;\ni_app(r,v) >< i_lam(x,f) => r~x,x~f;\n"
         -- find functions with nat literal rules
         natFuncs     = natLitFuncNames rules
         -- generate guarded rules for those functions
@@ -918,13 +995,13 @@ groupNatRulesFor fName rules =
                        []    -> Nothing
     in (litRules, varRule)
 
---- Generate a single guarded INPLA rule from Nat literal rules + optional catch-all
+--- Generate a single guarded INPLA rule from Nat literal rules + catch-all
 makeGuardedNatRule :: [Rule] -> Maybe Rule -> LUT -> String
 makeGuardedNatRule litRules mVarRule lut =
-    let -- get variable name from NatVar rule, default to "x"
+    let -- get variable name from NatVar rule, default to "x_0"
         varName = case mVarRule of
                     Just (Rule (Func _ args) _) -> head [v | NatVar v <- args]
-                    Nothing                      -> "x"
+                    Nothing                     -> "x_0"
         -- translate each lit rule to get its RHS
         transLit (Rule (Func f args) rhs) =
             let n       = head [n | Nat n <- args]
@@ -935,10 +1012,8 @@ makeGuardedNatRule litRules mVarRule lut =
         Rule (Func fName args) _ = case mVarRule of
                                      Just r  -> r
                                      Nothing -> head litRules
-        --Rule (Func fName args) _ = head litRules
         -- get output ports from LHS translation
-        lhs      = transLHS (Func fName args) "r" lut
-        --lhs      = cleanNet $ trans (Func fName args) "r" ([],[]) lut
+        lhs        = transLHS (Func fName args) "r" lut
         (agents,_) = lhs
         (_, _, auxPorts) = head agents
         outPorts = listPorts auxPorts
@@ -966,8 +1041,9 @@ isNestedConstr _               = False
 
 -- Check if a term is any constructor
 isConstr :: Term -> Bool
-isConstr (Constr _ _) = True
-isConstr _            = False
+isConstr (Constr _ _)  = True
+isConstr (ListTerm []) = True
+isConstr _             = False
 
 testHasNestedPattern :: FilePath -> IO ()
 testHasNestedPattern filename = do
@@ -1009,7 +1085,9 @@ hasMPP _                      = False
 
 -- Get function name and first-position constructor name from an MPP rule
 mppKey :: Rule -> Maybe (FuncName, ConstrName)
-mppKey (Rule (Func f (Constr c _ : _)) _) = Just (f, c)
+mppKey (Rule (Func f (Constr c _ : _)) _)  = Just (f, c)
+mppKey (Rule (Func f (ListTerm [] : _)) _) = Just (f, "Nil")
+mppKey (Rule (Func f (NatVar _ : _)) _)    = Just (f, "Int")
 mppKey _                                   = Nothing
 
 -- Group MPP rules by (function name, first-position constructor)
@@ -1027,28 +1105,68 @@ groupMPPRules rules =
 --           mppMaxS(S(y),x) = S(max(x,y))
 expandMPPGroup :: (FuncName, ConstrName) -> [Rule] -> [Rule]
 expandMPPGroup (fName, cName) rules =
-    let -- auxiliary function name
-        auxName  = "mpp" ++ fName ++ cName
-        -- get first constructor's args from first rule (they're all the same)
-        Rule (Func _ (Constr _ cArgs : _)) _ = head rules
+    let -- auxiliary function name; '!' (from !Cons) replaced with '_' for INPLA
+        auxName  = "mpp" ++ fName ++ map (\ch -> if ch == '!' then '_' else ch) cName
+        -- first-position pattern: args to carry to aux, and the LHS pattern itself
+        (cArgs, cPat) = case head rules of
+            Rule (Func _ (Constr c args : _)) _ -> (args, Constr c args)
+            Rule (Func _ (ListTerm [] : _)) _   -> ([], ListTerm [])
+            Rule (Func _ (NatVar v : _)) _      -> ([Var v], NatVar v)
+            _ -> error "expandMPPGroup: unexpected pattern"
         -- fresh variable for the second argument in dispatch rule
         secVar   = "mppY"
-        -- dispatch rule: fName(Constr(cArgs), secVar) = auxName(secVar, cArgs)
-        dispatch = Rule (Func fName [Constr cName cArgs, Var secVar])
+        -- dispatch rule: fName(cPat, secVar) = auxName(secVar, cArgs)
+        dispatch = Rule (Func fName [cPat, Var secVar])
                         (Func auxName (Var secVar : cArgs))
         -- auxiliary rules: one per second-position pattern
         mkAux (Rule (Func _ (_ : rest)) rhs) =
             Rule (Func auxName (rest ++ cArgs)) rhs
         auxRules = map mkAux rules
-    in dispatch : auxRules
+    in auxRules ++ [dispatch]
+-- expandMPPGroup :: (FuncName, ConstrName) -> [Rule] -> [Rule]
+-- expandMPPGroup (fName, cName) rules =
+--     let -- auxiliary function name
+--         --auxName  = "mpp" ++ fName ++ cName
+--         auxName  = "mpp" ++ fName ++ map (\ch -> if ch == '!' then '_' else ch) cName
+--         -- get first constructor's args from first rule (they're all the same)
+--         (cName, cArgs) = case head rules of
+--                                 Rule (Func _ (Constr c args : _)) _ -> (c, args)
+--                                 Rule (Func _ (ListTerm [] : _)) _   -> ("Nil", [])
+--                                 _                                    -> error "expandMPPGroup: unexpected pattern"
+--         --Rule (Func _ (Constr _ cArgs : _)) _ = head rules
+--         -- fresh variable for the second argument in dispatch rule
+--         secVar   = "mppY"
+--         -- dispatch rule: fName(Constr(cArgs), secVar) = auxName(secVar, cArgs)
+--         dispatch = Rule (Func fName [if cName == "Nil" 
+--                                      then ListTerm [] 
+--                                      else Constr cName cArgs, Var secVar])
+--                 (Func auxName (Var secVar : cArgs))
+--         -- dispatch = Rule (Func fName [Constr cName cArgs, Var secVar])
+--         --                 (Func auxName (Var secVar : cArgs))
+--         -- auxiliary rules: one per second-position pattern
+--         mkAux (Rule (Func _ (_ : rest)) rhs) =
+--             Rule (Func auxName (rest ++ cArgs)) rhs
+--         auxRules = map mkAux rules
+--     in auxRules ++ [dispatch]
 
 expandAllMPP :: [Rule] -> [Rule]
 expandAllMPP rules =
     let groups    = groupMPPRules rules
         mppRules  = filter hasMPP rules
+        badRules  = [r | r <- mppRules, mppKey r == Nothing]
         normalRules = filter (not . hasMPP) rules
         expanded  = concatMap (uncurry expandMPPGroup) groups
-    in normalRules ++ expanded
+    in if not (null badRules)
+       then error ("MPP rule needs a constructor pattern in the first argument: " ++ show (head badRules))
+       else normalRules ++ expanded
+
+-- expandAllMPP :: [Rule] -> [Rule]
+-- expandAllMPP rules =
+--     let groups      = groupMPPRules rules
+--         mppRules    = filter hasMPP rules
+--         normalRules = filter (not . hasMPP) rules
+--         expanded    = concatMap (uncurry expandMPPGroup) groups
+--     in normalRules ++ expanded
 
 -- HoFs
 expandFuncApp :: Term -> Term
