@@ -1,5 +1,9 @@
 -- HOFs tests
+-- -hof and -imm
+
 map([], ^f)    = []
 map(x:xs, ^f)  = (^f(x) : map(xs, ^f))
+
 app(_x,^f)     = ^f(x)
+
 comp(_x,^f,^g) = ^f(^g(x)) 

@@ -1,0 +1,27 @@
+-- natural number arithmetic examples
+-- no flags required
+
+-- erasure
+e(*) = -
+
+-- duplication
+d(0)  = 0 | 0
+d(_x) = x | x
+
+-- addition
+add(0,y)   = y
+add(_x,_y) = succ(add(pred(x),y))
+
+-- multiplication (implicit erasure & duplication)
+mult(0,y)   = 0 | e(y)
+mult(_x,_y) = let [y1,y2]~d(y) in add(mult(pred(x),y1),y2)
+
+-- factorial (explicit duplication)
+fact(0)  = 1
+fact(_x) = let [x1,x2]~d(x) in mult(x1,fact(pred(x2)))
+
+-- ackermann function(explicit duplication)
+ack(0,y)    = succ(y)
+ack(_x,_y)  = ackp(y,pred(x))
+ackp(0,x)   = ack(x,1)
+ackp(_y,_x) = let [x1,x2]~d(x) in ack(x1,ack(succ(x2),pred(y)))

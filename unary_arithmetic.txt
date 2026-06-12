@@ -1,0 +1,28 @@
+-- unary arithmetic example
+-- runs on "base FLIN"; no flags required
+
+-- erasure unary numbers (Z,S(x))
+e(Z)    = -
+e(S(x)) = e(x)
+
+-- duplication unary numbers
+d(Z)    = Z|Z
+d(S(x)) = let [x1,x2]~d(x) in S(x1)|S(x2)
+
+-- addition
+add(Z,y)    = y
+add(S(x),y) = S(add(x,y))
+
+-- multiplication (explicit erasure & duplication)
+mult(Z,y)    = Z | e(y)
+mult(S(x),y) = let [y1,y2]~d(y) in add(mult(x,y1),y2)
+
+-- factorial (explicit duplication)
+fact(Z)    = S(Z)
+fact(S(x)) = let [x1,x2]~d(x) in mult(fact(x1),S(x2))
+
+-- ackermann function(explicit duplication)
+ack(Z,y)     = S(y)
+ack(S(x),y)  = ackp(y,x)
+ackp(Z,x)    = ack(x,S(Z))
+ackp(S(y),x) = let [x1,x2]~d(x) in ack(x1,ack(S(x2),y))

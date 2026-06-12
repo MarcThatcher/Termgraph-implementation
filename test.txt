@@ -1,6 +1,4 @@
 -- test file
--- no blank lines, please!
--- careful with variable names: r,s,t,u,v... may cause problems due to internal naming; stick to variations of x,y,z
 --
 id(Z) = Z
 id(S(x)) = S(id(x))

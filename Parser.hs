@@ -4,7 +4,7 @@
 module Parser where
 
 import           Text.Parsec            (Parsec, parse, eof, (<|>), (<?>), sepBy, try, lookAhead, option, optionMaybe)
-import           Text.Parsec.Combinator (chainl1)
+import           Text.Parsec.Combinator (chainl1, chainr1)
 import           Text.Parsec.Prim       (tokenPrim)
 import           Text.Parsec.Error      (ParseError)
 import           Text.Parsec.Pos        (SourcePos)
@@ -188,7 +188,7 @@ consOp = do
     pure (\t1 t2 -> Constr "!Cons" [t1, t2])
 
 consTerm :: Parser Term
-consTerm = chainl1 baseTerm consOp
+consTerm = chainr1 baseTerm consOp
 
 ----------------------------------------------------------
 -- FLIN Net Parser

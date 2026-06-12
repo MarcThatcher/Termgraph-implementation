@@ -1,5 +1,10 @@
--- nested tests
+-- lastCons; nested example
+-- -npm
+
 e(_x)  = -
 e(Nil) = -
+
 last(Cons(x,Nil)) = x
 last(Cons(x,Cons(y,ys))) = last(Cons(y,ys)) | e(x)
+
+-- example: last(Cons(1,Cons(2,Cons(3,Nil))))

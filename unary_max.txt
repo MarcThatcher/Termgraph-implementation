@@ -1,0 +1,5 @@
+-- max unary numbers; mpp example file
+
+max(Z,y)       = y
+max(S(x),Z)    = S(x)
+max(S(x),S(y)) = S(max(x,y))

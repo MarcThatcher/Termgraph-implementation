@@ -66,6 +66,8 @@ interactive args = do
     inputFile <- readFile filename
     let ruleLines = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) (lines inputFile)
         (lut, transRules) = processRules args ruleLines
+    putStrLn "LUT:" --- ******************************** DELETE ME &&&&&&&&&&(( *)) **********
+    putStrLn (show lut)    
     putStrLn "Input:"
     putStrLn inputFile
     putStrLn "\nINPLA rules:"
@@ -259,18 +261,6 @@ trans (Func fName args) root net lut =
           (zip args (pp : inPortsExPP))
   in
       (allAgents, allWires)
-  --     (allAgents, allWires) =
-  --       foldr
-  --         (\(arg, port) (as, ws) ->
-  --            let freshP = port ++ "_0"
-  --            --let freshP       = fresh port
-  --                (as', ws')   = trans arg freshP net lut
-  --                newWire      = (freshP, port)  -- connect arg result to function input
-  --            in  (as' ++ as, newWire : (ws' ++ ws)))
-  --         ([], [])
-  --         (zip args (pp : inPortsExPP))
-  -- in
-  --     (newAgent : allAgents, allWires)
 
 -- natural number variables
 trans (NatVar v) root (agents, wires) _ =
@@ -359,8 +349,8 @@ netToINPLA (agents, wires)
   | null inplaWires  = inplaAgents ++ ";"
   | otherwise        = inplaAgents ++ "," ++ inplaWires ++ ";"
   where
-    inplaAgents = agentsToINPLA agents
-    inplaWires  = wiresToINPLA wires
+    (cleanAgents, cleanWires) = cleanNet (agents, wires)
+    (inplaAgents, inplaWires) = (agentsToINPLA cleanAgents, wiresToINPLA cleanWires)
 
 agentsToINPLA :: [Agent] -> String
 agentsToINPLA []     = ""
@@ -393,16 +383,20 @@ funcNumOuts symbol ((name, num):rest) =
 
 -- build the LUT
 makeLUT :: [Rule] -> LUT -> LUT
-makeLUT [] lut = lut
-makeLUT (Rule t1 t2 : rs) lut =
+-- multiple applications because if have npm'd rules need originals in first in case newly created refer to them
+makeLUT rules lut = makeLUT' (npmTransRuleList rules) (makeLUT' rules lut)
+
+makeLUT' :: [Rule] -> LUT -> LUT
+makeLUT' [] lut = lut
+makeLUT' (Rule t1 t2 : rs) lut =
     case t1 of
         Func fName _ ->
             if any (\(name, _) -> name == fName) lut
-               then makeLUT rs lut  -- already in LUT, skip
+               then makeLUT' rs lut  -- already in LUT, skip
                else
                    let numOuts = countOuts t2 lut
                        lut'    = lut ++ [(fName, numOuts)]
-                   in makeLUT rs lut'
+                   in makeLUT' rs lut'
         _ -> error "First term of Rule must be Func"
 
 
@@ -552,10 +546,12 @@ transRule rule lut npm =
                 Let _ _ _ -> cleanUpLetOutputs lhs (cleanNet $ trans t2 root ([], []) lut) lut
                 _         -> let (agents,wires) = trans t2 root ([], []) lut
                              in cleanNet (nub agents,nub wires) 
-    in if npm && numAgents > 2
-       then applyT lhs t2 root lut npm
-       else let lhsStr = transActivePair lhs
-            in lhsStr ++ netToINPLA (renameNetPorts lhsStr rhs)
+       in let lhsStr = transActivePair lhs
+          in lhsStr ++ netToINPLA (renameNetPorts lhsStr rhs)
+    -- in if npm && numAgents > 2
+    --    then applyT lhs t2 root lut npm
+    --    else let lhsStr = transActivePair lhs
+    --         in lhsStr ++ netToINPLA (renameNetPorts lhsStr rhs)
 
 applyT :: Net -> Term -> Port -> LUT -> Bool -> String
 applyT lhs t2 root lut npm =
@@ -615,12 +611,13 @@ updateOutputs (agents, wires) from to =
     (map (updateAgent from to) agents, map (updateWire from to) wires)
 
 transRuleList :: [Rule] -> LUT -> Bool -> String
-transRuleList rules lut npm =
+transRuleList ruleList lut npm =
     builtins ++ guardedRules ++ dupToDup normalRules
     where
+        rules = if npm then npmTransRuleList ruleList else ruleList
         -- built in INPLA rules : succ&pred to work with natural number consturctors and i_app and i_lam for lambda calculus for HOFs
         -- note pred min is 0
-        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) | x>0 => r~x-1 | _ => r~0;\ni_app(r,v) >< i_lam(x,f) => r~x,x~f;\n"
+        builtins = "succ(r) >< (int x) => r~(x+1);\npred(r)><(int x) | x>0 => r~x-1 | _ => r~0;\ni_app(r,v) >< i_lam(x,f) => r~f,v~x;\n"
         -- find functions with nat literal rules
         natFuncs     = natLitFuncNames rules
         -- generate guarded rules for those functions
@@ -845,7 +842,7 @@ expandAllGenConstrs rules =
         (generic, specific) = partition hasGenConstr rules
         -- expand each generic rule into a list of concrete rules
         expanded      = concatMap (\r -> expandGenConstr r constrTable rules) generic
-    in specific ++ expanded
+    in expanded ++ specific
 
 -- Check if a rule contains a GenConstr anywhere in its LHS
 hasGenConstr :: Rule -> Bool
@@ -1002,12 +999,6 @@ makeGuardedNatRule litRules mVarRule lut =
         varName = case mVarRule of
                     Just (Rule (Func _ args) _) -> head [v | NatVar v <- args]
                     Nothing                     -> "x_0"
-        -- translate each lit rule to get its RHS
-        transLit (Rule (Func f args) rhs) =
-            let n       = head [n | Nat n <- args]
-                rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
-                rhsStr' = init (netToINPLA rhsNet)
-            in " | " ++ varName ++ "==" ++ show n ++ " => " ++ rhsStr'
         -- get header from first rule
         Rule (Func fName args) _ = case mVarRule of
                                      Just r  -> r
@@ -1018,14 +1009,73 @@ makeGuardedNatRule litRules mVarRule lut =
         (_, _, auxPorts) = head agents
         outPorts = listPorts auxPorts
         header   = fName ++ "(" ++ outPorts ++ ") >< (int " ++ varName ++ ")"
+        -- translate a RHS, rooting Par components at the LHS output ports
+        -- (otherwise trans's Par case invents its own roots, e.g. r_0 vs rr_0)
+        numOuts  = funcNumOuts fName lut
+        rhsRoots = take numOuts auxPorts
+        transRHS rhs = case rhs of
+            Par _ _ -> cleanNet $ foldl
+                           (\(aAcc, wAcc) (t, p) ->
+                                let (a', w') = trans t p ([], []) lut
+                                in (aAcc ++ a', wAcc ++ w'))
+                           ([], [])
+                           (zip (flatPar rhs) rhsRoots)
+            _       -> cleanNet $ trans rhs "r" ([], []) lut
+        -- translate each lit rule to get its RHS
+        transLit (Rule (Func f args) rhs) =
+            let n       = head [n | Nat n <- args]
+                rhsStr' = init (netToINPLA (transRHS rhs))
+            in " | " ++ varName ++ "==" ++ show n ++ " => " ++ rhsStr'
         guards   = concatMap transLit litRules
         catchAll = case mVarRule of
-                     Just (Rule _ rhs) ->
-                         let rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
-                             rhsStr  = init (netToINPLA rhsNet)
+                     Just (Rule (Func f ((NatVar var):vars)) rhs) ->
+                         let rhsNet  = transRHS rhs
+                             rhsNet' = if null (fst rhsNet)
+                                       then let ports = snd rhsNet
+                                            in ([], map (\(a, b) -> (a++"~"++var, b++"~"++var)) ports)
+                                       else rhsNet
+                             rhsStr  = if null (fst rhsNet)
+                                       then intercalate "," (concatMap (\(a, b) -> [a, b]) (snd rhsNet'))
+                                       else init (netToINPLA rhsNet)
                          in " | _ => " ++ rhsStr
                      Nothing -> " | _ => r~ERROR"
     in header ++ guards ++ catchAll ++ ";"
+-- makeGuardedNatRule :: [Rule] -> Maybe Rule -> LUT -> String
+-- makeGuardedNatRule litRules mVarRule lut =
+--     let -- get variable name from NatVar rule, default to "x_0"
+--         varName = case mVarRule of
+--                     Just (Rule (Func _ args) _) -> head [v | NatVar v <- args]
+--                     Nothing                     -> "x_0"
+--         -- translate each lit rule to get its RHS
+--         transLit (Rule (Func f args) rhs) =
+--             let n       = head [n | Nat n <- args]
+--                 rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
+--                 rhsStr' = init (netToINPLA rhsNet)
+--             in " | " ++ varName ++ "==" ++ show n ++ " => " ++ rhsStr'
+--         -- get header from first rule
+--         Rule (Func fName args) _ = case mVarRule of
+--                                      Just r  -> r
+--                                      Nothing -> head litRules
+--         -- get output ports from LHS translation
+--         lhs        = transLHS (Func fName args) "r" lut
+--         (agents,_) = lhs
+--         (_, _, auxPorts) = head agents
+--         outPorts = listPorts auxPorts
+--         header   = fName ++ "(" ++ outPorts ++ ") >< (int " ++ varName ++ ")"
+--         guards   = concatMap transLit litRules
+--         catchAll = case mVarRule of
+--                      Just (Rule (Func f ((NatVar var):vars)) rhs) ->
+--                          let rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
+--                              rhsNet' = if null (fst rhsNet)
+--                                        then let ports = snd rhsNet
+--                                             in ([], map (\(a, b) -> (a++"~"++var, b++"~"++var)) ports)
+--                                        else rhsNet
+--                              rhsStr  = if null (fst rhsNet)
+--                                        then intercalate "," (concatMap (\(a, b) -> [a, b]) (snd rhsNet'))
+--                                        else init (netToINPLA rhsNet)
+--                          in " | _ => " ++ rhsStr
+--                      Nothing -> " | _ => r~ERROR"
+--     in header ++ guards ++ catchAll ++ ";"
 
 
 -- nested pattern matching
@@ -1246,3 +1296,83 @@ transHOFterm (Constr c args)   = Constr c (map transHOFterm args)
 transHOFterm (Par t1 t2)       = Par (transHOFterm t1) (transHOFterm t2)
 transHOFterm (Let t1 vs t2)    = Let (transHOFterm t1) vs (transHOFterm t2)
 transHOFterm t                 = t
+
+
+-- npm
+-- Scan a rule's LHS for constructors, Nats, or ListTerms in non-first positions
+-- (including nested within the first argument's arguments)
+-- Scan a Term for constructors, Nats, or ListTerms in non-first positions
+-- (including nested within the first argument's arguments)
+npmTransRuleList :: [Rule] -> [Rule]
+npmTransRuleList = concatMap npmTrans
+
+npmTrans :: Rule -> [Rule]
+npmTrans rule =
+    let Rule (Func fName args) rhs = rule
+        listArgs = [arg | arg@(Constr c _) <- args, c == "!Cons" || c == "Cons"]
+        allVars (Constr c cArgs) = all isVar cArgs
+        isVar (Var _) = True
+        isVar _       = False
+        -- replaceNonVars (Constr _ cArgs) n =
+        --     let replace arg i = case arg of
+        --             Var _ -> arg
+        --             _     -> Var ("var_" ++ show i)
+        --     in Constr "!Cons" (zipWith replace cArgs [n..])
+        replaceNonVars (Constr c cArgs) n =
+            let replace arg i = case arg of
+                    Var _ -> arg
+                    _     -> Var ("var_" ++ show i)
+            in Constr c (zipWith replace cArgs [n..])
+        replaceNonVars t _ = t
+        (newArgs, _) = foldl
+            (\(as, n) arg -> case arg of
+                Constr c _ | c == "!Cons" || c == "Cons" -> (as ++ [replaceNonVars arg n], n + 1)
+                _                -> (as ++ [arg], n))
+            ([], 0) args
+        extractVars (Var v)          = [Var v]
+        extractVars (Constr _ cArgs) = concatMap extractVars cArgs
+        extractVars _                = []
+        varsInArgs = concatMap extractVars newArgs
+        newLHS  = Func fName newArgs
+        newRHS  = Func (fName ++ "_1") (reverse varsInArgs)
+        Constr _ [origA, origB] = head listArgs
+        (replaced, other) = if isVar origA then (origB, origA) else (origA, origB)
+        auxLHS  = Func (fName ++ "_1") [replaced, other]
+        auxRule = Rule auxLHS rhs
+    in if null listArgs || all allVars listArgs
+       then [rule]
+       else [Rule newLHS newRHS, auxRule]
+
+
+
+-- npmTrans :: Rule -> [Rule]
+-- npmTrans rule =
+--     let Rule (Func fName args) rhs = rule
+--         listArgs = [arg | arg@(Constr "!Cons" _) <- args]
+--         allVars (Constr "!Cons" cArgs) = all isVar cArgs
+--         isVar (Var _) = True
+--         isVar _       = False
+--         replaceNonVars (Constr "!Cons" cArgs) n =
+--             let replace arg i = case arg of
+--                     Var _ -> arg
+--                     _     -> Var ("var_" ++ show i)
+--             in Constr "!Cons" (zipWith replace cArgs [n..])
+--         replaceNonVars t _ = t
+--         (newArgs, _) = foldl
+--             (\(as, n) arg -> case arg of
+--                 Constr "!Cons" _ -> (as ++ [replaceNonVars arg n], n + 1)
+--                 _                -> (as ++ [arg], n))
+--             ([], 0) args
+--         extractVars (Var v)          = [Var v]
+--         extractVars (Constr _ cArgs) = concatMap extractVars cArgs
+--         extractVars _                = []
+--         varsInArgs = concatMap extractVars newArgs
+--         newLHS  = Func fName newArgs
+--         newRHS  = Func (fName ++ "_1") (reverse varsInArgs)
+--         Constr "!Cons" [origA, origB] = head listArgs
+--         (replaced, other) = if isVar origA then (origB, origA) else (origA, origB)
+--         auxLHS  = Func (fName ++ "_1") [replaced, other]
+--         auxRule = Rule auxLHS rhs
+--     in if null listArgs || all allVars listArgs
+--        then [rule]
+--        else [Rule newLHS newRHS, auxRule]

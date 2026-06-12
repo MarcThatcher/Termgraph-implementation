@@ -1,9 +1,5 @@
 -- Thue-Morse file
--- no blank lines, please (including at end)!
--- careful with variable names: r,s,t,u,v... may cause problems due to internal naming
--- comments full line only, cannot put after function definitions
---
--- base cases included for debugging
+-- base cases included for debugging and to allow compilation
 --
 d(Nil)  = Nil | Nil
 d(Z(x)) = let [x1,x2]~d(x) in Z(x1) | Z(x2)
@@ -30,4 +26,4 @@ zip(O(x),y) = O(zip(y,x))
 -- let [x1,x2]~d(y2) in let [y1,y2]~d(Z(zip(inv(even(y1)),tail(x2)))) in x1
 -- run in -w mode
 -- rLsLrLt ->Z(<r1>) then do tail(a)~rLsLrLt; then tail(b)~a; etc to get each next constructor
-- sequence is 01101001100101101...
+-- sequence is 01101001100101101...

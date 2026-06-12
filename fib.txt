@@ -1,12 +1,12 @@
 -- fib
 -- run with -imm flag
--- 
+
 add(0, n)  = n
 add(_m,_n) = succ(add(pred(m),n))
---
+
 mult(0,n)   = 0
 mult(_m,_n) = add(mult(pred(m),n),n)
---
+
 fib(0)  = 0
 fib(1)  = 1
 fib(_n) = add(fib(pred(n)), fib(pred(pred(n))))

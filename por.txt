@@ -1,0 +1,6 @@
+-- por (does not work!)
+-- run with -imm, -mpp (won't work!)
+
+por(True,y)      = True
+por(x,True)      = True
+por(False,False) = False

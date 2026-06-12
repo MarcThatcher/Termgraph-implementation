@@ -1,0 +1,4 @@
+-- error examples
+
+-- run without -imm
+d(S(x))= S(x) | S(x)

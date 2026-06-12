@@ -43,8 +43,8 @@ concatMap ([],^f)     = []
 concatMap ((x:xs),^f) = app(^f(x),concatMap(xs,^f))
 
 -- map
-map ([],^f)     = []
-map ((x:xs),^f) = (^f(x):map(xs,^f))
+map([],^f)     = []
+map((x:xs),^f) = (^f(x):map(xs,^f))
 
 -- absolute difference
 absDiff(Z,y)       = y

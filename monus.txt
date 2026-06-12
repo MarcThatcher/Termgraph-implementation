@@ -1,0 +1,5 @@
+-- monus  : y-x s.t. min value 0
+-- another mpp example
+
+monus(0,y)   = y
+monus(_x,_y) = monus(pred(x),pred(y))

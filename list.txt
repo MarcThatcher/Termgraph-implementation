@@ -1,3 +1,32 @@
--- test for lists
-id([])=[]
+-- list examples
+-- no flags required
+
+-- erasure
+e([]) = -
+e(*)  = -
+e(x:xs) = e(x) | e(xs)
+
+-- id
+id([])   = []
+id(x:xs) = (x:xs)
+
+-- append
+append([],ys)     = ys
+append((x:xs),ys) = x:(append(xs,ys))
+
+-- split list head, tail
 uncons(x:xs)=x|xs
+
+-- head
+hd(x:xs) = x | e(xs)
+
+-- tail
+tl(x:xs) = xs | e(x)
+
+-- null
+null([])   = True
+null(x:xs) = False | e(x:xs)
+
+-- reverse list
+rev([])   = []
+rev(x:xs) = append((rev(xs)),(x:[])) 

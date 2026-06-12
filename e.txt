@@ -1,0 +1,5 @@
+-- erasing
+id(Z)=Z
+id(S(x))=S(x)
+e(*)=-
+e(*(x)) = e(x)
