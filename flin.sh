@@ -1,26 +1,14 @@
 #!/bin/bash
+# Usage: flin.sh [-imm] [-hof] [-mpp] [-npm] <filename.txt>
 
-# Usage: ./flin.sh [flags] filename
-# run chmod +x flin first
+FILE="${@: -1}"         # last argument is the filename
+FLAGS="${@:1:$#-1}"     # everything else is flags
+BASE="${FILE%.txt}"     # strip .txt extension
 
-FLAGS=""
-FILENAME=""
-BAT=0
+./flin $FLAGS -bat "$FILE"
+inpla -f "${BASE}.in"
 
-for arg in "$@"; do
-    if [[ "$arg" == -* ]]; then
-        FLAGS="$FLAGS $arg"
-        if [[ "$arg" == "-bat" ]]; then
-            BAT=1
-        fi
-    else
-        FILENAME="$arg"
-    fi
-done
-
-runghc Trans.hs $FLAGS $FILENAME
-
-if [[ $BAT -eq 1 ]]; then
-    OUTFILE="${FILENAME%.txt}.in"
-    inpla -f "$OUTFILE"
-fi
+# save and then 
+# chmod +x flin.sh
+# Run as:
+#  ./flin.sh [flags] <filename>.txt

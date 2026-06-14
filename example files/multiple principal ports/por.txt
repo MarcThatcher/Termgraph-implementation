@@ -1,4 +1,4 @@
--- por (does not work!)
+-- por example to show that parallel matching does not work
 -- run with -imm, -mpp (won't work!)
 
 por(True,y)      = True

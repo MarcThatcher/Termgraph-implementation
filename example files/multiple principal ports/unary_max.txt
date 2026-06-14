@@ -1,4 +1,6 @@
--- multiple pp tests
+-- max unary numbers example
+-- -mpp required
+
 max(Z,y)       = y
 max(S(x),Z)    = S(x)
 max(S(x),S(y)) = S(max(x,y))

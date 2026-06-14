@@ -1,4 +1,0 @@
--- batch test
-dup(Z) = Z|Z
-
-dup(Z)

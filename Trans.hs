@@ -66,9 +66,7 @@ interactive args = do
     inputFile <- readFile filename
     let ruleLines = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) (lines inputFile)
         (lut, transRules) = processRules args ruleLines
-    putStrLn "LUT:" --- ******************************** DELETE ME &&&&&&&&&&(( *)) **********
-    putStrLn (show lut)    
-    putStrLn "Input:"
+    putStrLn "Input file:"
     putStrLn inputFile
     putStrLn "\nINPLA rules:"
     putStrLn transRules
@@ -95,74 +93,6 @@ batch args = do
         output      = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
     writeFile outFile output
     putStrLn $ "Written to " ++ outFile
-
--- interactive :: [String] -> IO ()
--- interactive args = do
---     let imm      = "-imm" `elem` args
---         npm      = "-npm" `elem` args
---         mpp      = "-mpp" `elem` args
---         hof      = "-hof" `elem` args
---         filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof"]) args)
---     inputFile  <- readFile filename
---     let inputLines  = lines inputFile
---         ruleLines   = filter (not . null . words) $ filter (not . ("--" `isPrefixOf`)) inputLines
---         parsedRules = map parseRule ruleLines
---         rules       = (if imm then addAllErasers . addAllDuplicators else id)
---                       $ (if hof then expandAllFuncApps else id)
---                       $ (if mpp then expandAllMPP else id)
---                       $ expandAllGenConstrs
---                       $ [r | Right r <- parsedRules]
---         errors      = [e | Left e <- parsedRules]
---     if not (null errors)
---        then error ("Parse errors: " ++ show errors)
---        else do
---            let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
---                lut        = makeLUT rules builtinLUT
---                transRules = dupToDup (transRuleList rules lut npm)
---            putStrLn "Input:"
---            putStrLn inputFile
---            putStrLn "\nINPLA rules:"
---            putStrLn transRules
---            putStrLn ""
---            putStr "Enter a FLIN term to translate, or :Q to quit"
---            putStrLn ""
---            replLoop lut
-
--- batch :: [String] -> IO ()
--- batch args = do
---     let imm      = "-imm" `elem` args
---         npm      = "-npm" `elem` args
---         mpp      = "-mpp" `elem` args
---         hof      = "-hof" `elem` args
---         filename = head (filter (`notElem` ["-imm", "-npm", "-mpp", "-hof", "-bat"]) args)
---     inputFile  <- readFile filename
---     let inputLines  = lines inputFile
---         nonComment  = filter (not . ("--" `isPrefixOf`)) inputLines
---         (rs, rest)  = break null nonComment
---         termLine    = head $ filter (not . null) rest
---         parsedRules = map parseRule rs
---         rules       = (if imm then addAllErasers . addAllDuplicators else id)
---                       $ (if hof then expandAllFuncApps else id)
---                       $ (if mpp then expandAllMPP else id)
---                       $ expandAllGenConstrs
---                       $ [r | Right r <- parsedRules]
---         errors      = [e | Left e <- parsedRules]
---     if not (null errors)
---        then error ("Parse errors: " ++ show errors)
---        else do
---            let builtinLUT = [("succ", 1), ("pred", 1), ("!eraser", 0), ("!duplicator", 2), ("i_lam", 1), ("i_app", 1)]
---                lut        = makeLUT rules builtinLUT
---                transRules = dupToDup (transRuleList rules lut npm)
---                termResult = case inpla lut termLine of
---                                 Left err  -> "Parse error: " ++ show err
---                                 Right str -> str
---                Right pt   = parseTerm termLine
---                netTerm    = trans pt "r" ([],[]) lut
---                outPorts   = unconnectedPorts netTerm 
---                outFile    = reverse (dropWhile (/= '.') (reverse filename)) ++ "in"
---                output     = transRules ++ "\n" ++ termResult ++ "\n" ++ (unwords outPorts) ++ ";\n"
---            writeFile outFile output
---            putStrLn $ "Written to " ++ outFile
 
 replLoop :: LUT -> IO ()
 replLoop lut = do
@@ -280,7 +210,6 @@ trans (Let t1 vars t2) root net lut =
       (agents1, wires1) = cleanNet $ trans t1 root net lut
 
       -- 2. Rename outputs of t1 to match 'vars'
-      -- *** need to change this do deal with Par: need to do a case on shape of t1 e.g. x,y~A|B in x|y***
       (agents1',wires1') = cleanNet $
         if null agents1 then (agents1, renameWire t1 (head wires1) (head vars))   -- only handles 1 wire
         else ((renameOutputs t1 (head agents1) vars lut) : tail agents1, wires1)  -- only handles 1 agent
@@ -312,8 +241,6 @@ trans (ListTerm terms) root (agents, wires) _ =
 -- function application: should not be called
 trans (FuncApp f args) root (agents, wires) _ =
     error "FuncApp should have been expanded before translation"
-
-
 
 -- Convert a term to its INPLA string representation for use in list literals
 termToINPLA :: Term -> String
@@ -412,7 +339,6 @@ countOuts (Let t1 _ t2) lut = countOuts t2 lut
 countOuts (Par t1 t2) lut   = (countOuts t1 lut) + (countOuts t2 lut)
 countOuts (ListTerm _) _    = 1
 countOuts (FuncApp _ _) _   = 1
-
 
 -- fresh port names - appends _0 after alpha, increments digit after _, 9 -> _a
 fresh :: String -> String
@@ -712,12 +638,6 @@ stripAgent (symbol, pp, auxPorts) =
                         Nothing -> auxPorts'
     in (symbol, pp, newAux)
 
--- stripAgent :: Agent -> Agent
--- stripAgent (symbol, pp, auxPorts) = (stripInt symbol, pp, map stripInt auxPorts)
---   where stripInt s | "int " `isPrefixOf` s  = drop 4 s
---                    | "(int " `isPrefixOf` s = drop 5 (init s)
---                    | otherwise              = s
-
 replacePortAgents :: [Agent] -> [(Port,Port)] -> [Agent]
 replacePortAgents []          _        = []
 replacePortAgents (ag:agents) portList =
@@ -734,20 +654,6 @@ replacePortAgent (symbol, pp, aux) (new,old) =
   let pp'  = if pp == old then new else pp
       aux' = map (\p -> if p == old then new else p) aux
   in (symbol, pp', aux')
-
-
-
-
--- replacePortAgents :: [Agent] -> [Port] -> [Port] -> [Agent]
--- replacePortAgents []          _    _    = []
--- replacePortAgents (ag:agents) news olds = 
---   map (replacePortAgent 
-  -- zip news olds
-   
-
-
-  -- | length olds /= length news = error "replacePortAgents: lists must have equal length"
-  -- | otherwise = foldl (\ags o n -> map (\a -> replacePortAgent a n o) ags) agents olds news
 
 replacePortsWires :: [Wire] -> [Port] -> [Port] -> [Wire]
 replacePortsWires wires olds news
@@ -1040,42 +946,6 @@ makeGuardedNatRule litRules mVarRule lut =
                          in " | _ => " ++ rhsStr
                      Nothing -> " | _ => r~ERROR"
     in header ++ guards ++ catchAll ++ ";"
--- makeGuardedNatRule :: [Rule] -> Maybe Rule -> LUT -> String
--- makeGuardedNatRule litRules mVarRule lut =
---     let -- get variable name from NatVar rule, default to "x_0"
---         varName = case mVarRule of
---                     Just (Rule (Func _ args) _) -> head [v | NatVar v <- args]
---                     Nothing                     -> "x_0"
---         -- translate each lit rule to get its RHS
---         transLit (Rule (Func f args) rhs) =
---             let n       = head [n | Nat n <- args]
---                 rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
---                 rhsStr' = init (netToINPLA rhsNet)
---             in " | " ++ varName ++ "==" ++ show n ++ " => " ++ rhsStr'
---         -- get header from first rule
---         Rule (Func fName args) _ = case mVarRule of
---                                      Just r  -> r
---                                      Nothing -> head litRules
---         -- get output ports from LHS translation
---         lhs        = transLHS (Func fName args) "r" lut
---         (agents,_) = lhs
---         (_, _, auxPorts) = head agents
---         outPorts = listPorts auxPorts
---         header   = fName ++ "(" ++ outPorts ++ ") >< (int " ++ varName ++ ")"
---         guards   = concatMap transLit litRules
---         catchAll = case mVarRule of
---                      Just (Rule (Func f ((NatVar var):vars)) rhs) ->
---                          let rhsNet  = cleanNet $ trans rhs "r" ([],[]) lut
---                              rhsNet' = if null (fst rhsNet)
---                                        then let ports = snd rhsNet
---                                             in ([], map (\(a, b) -> (a++"~"++var, b++"~"++var)) ports)
---                                        else rhsNet
---                              rhsStr  = if null (fst rhsNet)
---                                        then intercalate "," (concatMap (\(a, b) -> [a, b]) (snd rhsNet'))
---                                        else init (netToINPLA rhsNet)
---                          in " | _ => " ++ rhsStr
---                      Nothing -> " | _ => r~ERROR"
---     in header ++ guards ++ catchAll ++ ";"
 
 
 -- nested pattern matching
@@ -1173,31 +1043,6 @@ expandMPPGroup (fName, cName) rules =
             Rule (Func auxName (rest ++ cArgs)) rhs
         auxRules = map mkAux rules
     in auxRules ++ [dispatch]
--- expandMPPGroup :: (FuncName, ConstrName) -> [Rule] -> [Rule]
--- expandMPPGroup (fName, cName) rules =
---     let -- auxiliary function name
---         --auxName  = "mpp" ++ fName ++ cName
---         auxName  = "mpp" ++ fName ++ map (\ch -> if ch == '!' then '_' else ch) cName
---         -- get first constructor's args from first rule (they're all the same)
---         (cName, cArgs) = case head rules of
---                                 Rule (Func _ (Constr c args : _)) _ -> (c, args)
---                                 Rule (Func _ (ListTerm [] : _)) _   -> ("Nil", [])
---                                 _                                    -> error "expandMPPGroup: unexpected pattern"
---         --Rule (Func _ (Constr _ cArgs : _)) _ = head rules
---         -- fresh variable for the second argument in dispatch rule
---         secVar   = "mppY"
---         -- dispatch rule: fName(Constr(cArgs), secVar) = auxName(secVar, cArgs)
---         dispatch = Rule (Func fName [if cName == "Nil" 
---                                      then ListTerm [] 
---                                      else Constr cName cArgs, Var secVar])
---                 (Func auxName (Var secVar : cArgs))
---         -- dispatch = Rule (Func fName [Constr cName cArgs, Var secVar])
---         --                 (Func auxName (Var secVar : cArgs))
---         -- auxiliary rules: one per second-position pattern
---         mkAux (Rule (Func _ (_ : rest)) rhs) =
---             Rule (Func auxName (rest ++ cArgs)) rhs
---         auxRules = map mkAux rules
---     in auxRules ++ [dispatch]
 
 expandAllMPP :: [Rule] -> [Rule]
 expandAllMPP rules =
@@ -1210,13 +1055,6 @@ expandAllMPP rules =
        then error ("MPP rule needs a constructor pattern in the first argument: " ++ show (head badRules))
        else normalRules ++ expanded
 
--- expandAllMPP :: [Rule] -> [Rule]
--- expandAllMPP rules =
---     let groups      = groupMPPRules rules
---         mppRules    = filter hasMPP rules
---         normalRules = filter (not . hasMPP) rules
---         expanded    = concatMap (uncurry expandMPPGroup) groups
---     in normalRules ++ expanded
 
 -- HoFs
 expandFuncApp :: Term -> Term
@@ -1244,16 +1082,6 @@ extractLHSPorts s =
 
 renameNetPorts :: String -> Net -> Net
 renameNetPorts str net = net
--- renameNetPorts lhsStr (rhsAgents, rhsWires) =
---     let lhsPorts = extractLHSPorts lhsStr
---         allPorts = concatMap (\(_, pp, aux) -> pp : aux) rhsAgents
---                 ++ concatMap (\(a, b) -> [a, b]) rhsWires
---         toRename = filter (`notElem` lhsPorts) (nub allPorts)
---         portMap = Map.fromList (zip toRename (map (\n -> "a_" ++ show n) [1..]))
---         rename p = Map.findWithDefault p p portMap
---         renameAgent (sym, pp, aux) = (sym, rename pp, map rename aux)
---         renameWire' (a, b) = (rename a, rename b)
---     in (map renameAgent rhsAgents, map renameWire' rhsWires)
 
 splitOnNonIdent :: String -> [String]
 splitOnNonIdent [] = []
@@ -1264,7 +1092,6 @@ splitOnNonIdent s@(c:cs)
 
 isIdentChar :: Char -> Bool
 isIdentChar c = isAlphaNum c || c == '_'
-
 
 transLHS :: Term -> Port -> LUT -> Net
 transLHS term root lut =
@@ -1342,37 +1169,3 @@ npmTrans rule =
     in if null listArgs || all allVars listArgs
        then [rule]
        else [Rule newLHS newRHS, auxRule]
-
-
-
--- npmTrans :: Rule -> [Rule]
--- npmTrans rule =
---     let Rule (Func fName args) rhs = rule
---         listArgs = [arg | arg@(Constr "!Cons" _) <- args]
---         allVars (Constr "!Cons" cArgs) = all isVar cArgs
---         isVar (Var _) = True
---         isVar _       = False
---         replaceNonVars (Constr "!Cons" cArgs) n =
---             let replace arg i = case arg of
---                     Var _ -> arg
---                     _     -> Var ("var_" ++ show i)
---             in Constr "!Cons" (zipWith replace cArgs [n..])
---         replaceNonVars t _ = t
---         (newArgs, _) = foldl
---             (\(as, n) arg -> case arg of
---                 Constr "!Cons" _ -> (as ++ [replaceNonVars arg n], n + 1)
---                 _                -> (as ++ [arg], n))
---             ([], 0) args
---         extractVars (Var v)          = [Var v]
---         extractVars (Constr _ cArgs) = concatMap extractVars cArgs
---         extractVars _                = []
---         varsInArgs = concatMap extractVars newArgs
---         newLHS  = Func fName newArgs
---         newRHS  = Func (fName ++ "_1") (reverse varsInArgs)
---         Constr "!Cons" [origA, origB] = head listArgs
---         (replaced, other) = if isVar origA then (origB, origA) else (origA, origB)
---         auxLHS  = Func (fName ++ "_1") [replaced, other]
---         auxRule = Rule auxLHS rhs
---     in if null listArgs || all allVars listArgs
---        then [rule]
---        else [Rule newLHS newRHS, auxRule]

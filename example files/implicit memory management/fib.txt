@@ -1,5 +1,5 @@
--- fib
--- run with -imm flag
+-- fibonacci example
+-- -imm flag required
 
 add(0, n)  = n
 add(_m,_n) = succ(add(pred(m),n))

@@ -1,5 +1,5 @@
--- max; multiple principal port example
--- -imm -mpp
+-- max example
+-- -imm -mpp required
 
 max(0,y)   = y
 max(x,0)   = x

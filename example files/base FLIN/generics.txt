@@ -1,5 +1,5 @@
--- generics example file
--- no flags needed
+-- generics examples
+-- no flags required
 
 -- some rules to give constructors ; (int x) cases are always generated
 add(Z,y)    = y

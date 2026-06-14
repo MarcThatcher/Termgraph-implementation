@@ -1,6 +1,0 @@
-e(Z)    = -
-e(S(x)) = e(x)
-len(Nil)        = Z
-len(Cons(x,xs)) = S(len(xs)) | e(x)
-d(Z)    = Z|Z
-d(S(x)) = let [x1,x2]~d(x) in S(x1)|S(x2)

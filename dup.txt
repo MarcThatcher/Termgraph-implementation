@@ -1,8 +1,0 @@
--- test for duplication
-d(Z)    = Z|Z
-d(S(x)) = let [x1,x2]~d(x) in S(x1)|S(x2)
-triple(S(x)) = let [x1,x2]~d(x) in let[x1a,x2a]~d(x1) in x1a|x2a|x2
---
-e(Z)    = -
-e(S(x)) = e(x)
---

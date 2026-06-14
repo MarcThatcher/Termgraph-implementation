@@ -1,5 +1,5 @@
--- implicit memory management example file
--- -imm (obviously!)
+-- implicit memory management examples
+-- -imm flag required
 
 -- fst: adds erase x
 fst(Pair(x,y)) = x

@@ -1,5 +1,5 @@
--- HOFs tests
--- -hof and -imm
+-- HOFs examples
+-- -hof and -imm required
 
 map([], ^f)    = []
 map(x:xs, ^f)  = (^f(x) : map(xs, ^f))
