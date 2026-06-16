@@ -3,9 +3,11 @@
 
 FILE="${@: -1}"         # last argument is the filename
 FLAGS="${@:1:$#-1}"     # everything else is flags
-BASE="${FILE%.txt}"     # strip .txt extension
 
 ./flin $FLAGS -bat "$FILE"
+
+BASE="${FILE%.txt}"     # strip .txt extension
+
 inpla -f "${BASE}.in"
 
 # save and then 
