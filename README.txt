@@ -83,7 +83,9 @@ Compile and run shell script
 ----------------------------
 There is also a bash script, flin.sh, which takes flags and a text file, runs FLIN in batch mode and pipes output into INPLA for execution.
 It assumes the two executables are in the same directory.
-
+To make it executable, run command 
+ chmod +x flin.sh
+and then run it as ./flin.sh [flags] filename.txt.
 
 Flags
 -----
