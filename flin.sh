@@ -8,7 +8,7 @@ FLAGS="${@:1:$#-1}"     # everything else is flags
 
 BASE="${FILE%.txt}"     # strip .txt extension
 
-inpla -f "${BASE}.in"
+./inpla -f "${BASE}.in"
 
 # save and then 
 # chmod +x flin.sh

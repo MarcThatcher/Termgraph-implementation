@@ -1,6 +1,6 @@
 module Main where
 import System.Environment (getArgs)
-import Trans
+import qualified Trans
 
 main :: IO ()
 main = getArgs >>= Trans.main

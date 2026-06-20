@@ -1,0 +1,20 @@
+succ(r) >< (int x) => r~(x+1);
+pred(r)><(int x) | x>0 => r~x-1 | _ => r~0;
+i_app(r,v) >< i_lam(x,f) => r~f,v~x;
+e() >< Z => ;
+e() >< S(x) => e()~x;
+d(r,rr_0) >< Z => Z()~r,Z()~rr_0;
+d(r,rr_0) >< S(x) => d(x1,x2)~x,S(x1)~r,S(x2)~rr_0;
+add(r,y) >< Z => y~r;
+add(r,y) >< S(x) => add(r_0,y)~x,S(r_0)~r;
+mult(r,y) >< Z => Z()~r,e()~y;
+mult(r,y) >< S(x) => d(y1,y2)~y,mult(r_0,y1)~x,add(r,y2)~r_0;
+fact(r) >< Z => S(r_0)~r,Z()~r_0;
+fact(r) >< S(x) => d(x1,x2)~x,fact(r_0)~x1,mult(r,r_0r_1)~r_0,S(x2)~r_0r_1;
+ack(r,y) >< Z => S(y)~r;
+ack(r,y) >< S(x) => ackp(r,x)~y;
+ackp(r,x) >< Z => ack(r,r_0r_1)~x,S(r_0r_1_1)~r_0r_1,Z()~r_0r_1_1;
+ackp(r,x) >< S(y) => d(x1,x2)~x,ack(r_0r_1,y)~r_0r_1_1,ack(r,r_0r_1)~x1,S(x2)~r_0r_1_1;
+
+add(r,r_0r_1)~r_0,Z()~r_0,Z()~r_0r_1;
+r;
