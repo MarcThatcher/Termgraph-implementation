@@ -20,7 +20,6 @@ type VarName    = String
 type ConstrName = String
 type FuncName   = String
 
-
 data Term
   = Var VarName
   | Empty
@@ -213,6 +212,7 @@ ruleParser = do
   tEquals
   rhs <- program
   pure (Rule lhs rhs)
+
 
 ----------------------------------------------------------
 -- API
