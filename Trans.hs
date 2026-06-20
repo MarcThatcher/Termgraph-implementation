@@ -79,9 +79,6 @@ batch :: [String] -> IO ()
 batch args = do
     let filename = head (filter (`notElem` allFlags) args)
     inputFile <- readFile filename
-    -- let nonComment  = filter (not . ("--" `isPrefixOf`)) (lines inputFile)
-    --     (rs, rest)  = break null nonComment
-    --     termLine    = head $ filter (not . null) rest
     let nonComment = filter (not . ("--" `isPrefixOf`)) (lines inputFile)
         cleaned    = filter (not . null) nonComment
         termLine   = last cleaned
