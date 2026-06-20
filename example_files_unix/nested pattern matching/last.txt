@@ -1,0 +1,5 @@
+-- nested pattern matching example
+-- -npm -imm
+
+last(x:[])     = x
+last(x1:x2:xs) = last(x2:xs)

@@ -1,0 +1,20 @@
+-- generics examples
+-- no flags required
+
+-- some rules to give constructors ; (int x) cases are always generated
+add(Z,y)    = y
+add(S(x),y) = S(add(x,y))
+
+-- generics
+
+-- erasure
+e(*)    = -
+e(*(x)) = e(x)
+
+-- duplication
+d(*) = * | *
+d(*(x)) = let [x1,x2]~d(x) in *(x1) | *(x2)
+
+-- fst,snd (of nullary constructor in first position)
+fst(*,y) = * | e(y)
+snd(*,y) = y 

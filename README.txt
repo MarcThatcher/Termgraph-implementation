@@ -70,13 +70,16 @@ It is easiest to always copy these also as they are only used if necessary but t
 Batch mode
 ----------
 (Please read the explanation for interactive mode before reading this.)
-In batch mode, the input file should be as for interactive mode but following the function definitions should be a blank line and then the term which is to be evaluated.
+In batch mode, the input file should be as for interactive mode but following the function definitions there must be a term to be evaluated.
+It is assumed that the term is the final line in the file so there cannot be anything after it including blank lines and comments.
 
 The compiler will output, in the same directory it is in, a file with the same name as the input file but with the extension ".in".
 
 INPLA run with the -f flag will read the entire file, evaluate the net and print the nets attached to all output ports.
 
-Beware!! All the example files are written for interactive use.  For batch use, add a blank line and then a term to be compiled.
+Beware #1 !! All the example files are written for interactive use.  For batch use, add a blank line and then a term to be run.
+Beware #2 !! The files in "example files" are in DOS text format.
+For use on UNIX-type systems, use "example_files_unix".
 
 
 Compile and run shell script
